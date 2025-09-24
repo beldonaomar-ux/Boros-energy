@@ -8,13 +8,17 @@ import matplotlib.pyplot as plt
 # Load your data
 df = pd.read_csv('boros_energy_matches.csv')
 
+# Add example columns
+df['meta_shift'] = ['MH3 release'] * 15 + ['Fury ban'] * 15
+df['deck_version'] = ['v1.0'] * 10 + ['v1.1'] * 10 + ['v1.2'] * 10
+
 # Convert date to numeric (days since first match)
 df['date'] = pd.to_datetime(df['date'])
 df['days_since_start'] = (df['date'] - df['date'].min()).dt.days
 
-# Encode categorical features
+# Encode categorical features (including new ones)
 encoder = OneHotEncoder(sparse=False)
-encoded = encoder.fit_transform(df[['opponent_archetype', 'event_type']])
+encoded = encoder.fit_transform(df[['opponent_archetype', 'event_type', 'meta_shift', 'deck_version']])
 encoded_df = pd.DataFrame(encoded, columns=encoder.get_feature_names_out())
 
 # Combine features
@@ -44,11 +48,13 @@ plt.show()
 future_match = pd.DataFrame({
     'days_since_start': [60],  # 60 days after first match
     'opponent_archetype': ['Yawgmoth Combo'],
-    'event_type': ['MTGO Challenge']
+    'event_type': ['MTGO Challenge'],
+    'meta_shift': ['Fury ban'],
+    'deck_version': ['v1.2']
 })
 
 # Encode features
-future_encoded = encoder.transform(future_match[['opponent_archetype', 'event_type']])
+future_encoded = encoder.transform(future_match[['opponent_archetype', 'event_type', 'meta_shift', 'deck_version']])
 future_features = pd.concat([
     pd.DataFrame({'days_since_start': [60]}),
     pd.DataFrame(future_encoded, columns=encoder.get_feature_names_out())
