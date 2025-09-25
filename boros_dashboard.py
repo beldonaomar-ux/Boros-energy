@@ -1,56 +1,90 @@
 import streamlit as st
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.model_selection import train_test_split
 
-st.title("🔮 Boros Energy Winrate Predictor")
-st.write("Upload your match data and predict future winrates.")
+# Page setup
+st.set_page_config(page_title="Boros Dashboard", layout="wide")
+st.title("🔴 Boros Energy Winrate Dashboard")
 
-uploaded_file = st.file_uploader("Upload your matches CSV", type=["csv"])
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    df['date'] = pd.to_datetime(df['date'])
-    df['days_since_start'] = (df['date'] - df['date'].min()).dt.days
+# Load data
+df = pd.read_csv("boros_energy_winrate_predictions.csv")
 
-    # Encode categorical features (including deck_version and meta_shift if present)
-    cat_features = ['opponent_archetype', 'event_type']
-    if 'deck_version' in df.columns:
-        cat_features.append('deck_version')
-    if 'meta_shift' in df.columns:
-        cat_features.append('meta_shift')
-
-    encoder = OneHotEncoder(sparse=False)
-    encoded = encoder.fit_transform(df[cat_features])
-    encoded_df = pd.DataFrame(encoded, columns=encoder.get_feature_names_out())
-
-    # Combine features
-    X = pd.concat([df[['days_since_start']], encoded_df], axis=1)
-    y = df['winrate']
-
-    # Train model
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = RandomForestRegressor()
-    model.fit(X_train, y_train)
-
-    st.success("Model trained! You can now make predictions below.")
-
-    # Prediction form
-    days = st.slider("Days since first match", 0, int(df['days_since_start'].max()) + 30, 30)
-    sel_dict = {}
-    for col in cat_features:
-        sel_dict[col] = st.selectbox(col.replace("_", " ").title(), df[col].unique())
-
-    # Encode input
-    input_df = pd.DataFrame({k: [v] for k, v in sel_dict.items()})
-    input_encoded = encoder.transform(input_df)
-    input_features = pd.concat([
-        pd.DataFrame({'days_since_start': [days]}),
-        pd.DataFrame(input_encoded, columns=encoder.get_feature_names_out())
-    ], axis=1)
-
-    if st.button("Predict Winrate"):
-        prediction = model.predict(input_features)[0]
-        st.metric(label="Predicted Winrate", value=f"{prediction:.2f}%")
+# Show overall winrate chart
+st.subheader("⚡ Predicted Winrate Over Time")
+if "Predicted Winrate" in df.columns:
+    st.line_chart(df["Predicted Winrate"])
 else:
-    st.info("Please upload your CSV data to continue.")
+    st.warning("Predicted Winrate column not found.")
+
+# Detect matchup columns
+matchup_cols = [col for col in df.columns if col.startswith("Winrate_vs_")]
+
+# Matchup dropdown
+if matchup_cols:
+    selected = st.selectbox("🧩 Choose Opponent Archetype", matchup_cols)
+    st.subheader(f"📊 Winrate vs {selected.replace('Winrate_vs_', '').replace('_', ' ')}")
+    st.line_chart(df[selected])
+else:
+    st.warning("No matchup data found in the CSV.")
+
+# View all matchup winrates
+if matchup_cols:
+    st.subheader("📋 All Matchup Winrates")
+    avg_winrates = df[matchup_cols].mean().sort_values(ascending=False)
+    st.bar_chart(avg_winrates)
+
+    # Top and bottom matchups
+    st.subheader("🔥 Top 5 Matchups")
+    st.bar_chart(avg_winrates.head(5))
+
+    st.subheader("💀 Bottom 5 Matchups")
+    st.bar_chart(avg_winrates.tail(5))
+
+    # Optional: show as table
+    with st.expander("📄 View All Matchups as Table"):
+        st.dataframe(avg_winrates)
+
+# 🧠 Deck Trait Diagnostics
+st.subheader("🧠 Deck Trait Diagnostics")
+
+# Define archetype categories
+interaction_heavy = ["Control", "Midrange", "Tempo"]
+low_interaction = ["Aggro", "Combo", "Ramp"]
+
+# Extract archetype names from column headers
+archetypes = [col.replace("Winrate_vs_", "").replace("_", " ") for col in matchup_cols]
+
+# Resilience: winrate vs. interaction-heavy decks
+resilience_cols = [col for col in matchup_cols if any(tag.lower() in col.lower() for tag in interaction_heavy)]
+resilience_score = df[resilience_cols].mean().mean() if resilience_cols else 0
+
+# Explosiveness: winrate vs. low-interaction decks
+explosive_cols = [col for col in matchup_cols if any(tag.lower() in col.lower() for tag in low_interaction)]
+explosiveness_score = df[explosive_cols].mean().mean() if explosive_cols else 0
+
+# Versatility: winrate spread across archetypes
+versatility_score = df[matchup_cols].mean().std()
+
+# Adaptability: winrate variance over time
+if "Predicted Winrate" in df.columns:
+    adaptability_score = df["Predicted Winrate"].std()
+else:
+    adaptability_score = 0
+
+# Late-game strength: winrate vs. Control
+control_cols = [col for col in matchup_cols if "control" in col.lower()]
+late_game_score = df[control_cols].mean().mean() if control_cols else 0
+
+# Display trait scores
+trait_scores = {
+    "Resilience": resilience_score,
+    "Explosiveness": explosiveness_score,
+    "Versatility": versatility_score,
+    "Adaptability": adaptability_score,
+    "Late Game": late_game_score
+}
+trait_df = pd.DataFrame(trait_scores, index=["Score"]).T
+st.bar_chart(trait_df)
+
+# Raw data viewer
+with st.expander("📄 Full Dataset"):
+    st.dataframe(df)
